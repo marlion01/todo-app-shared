@@ -1,0 +1,77 @@
+name: Shared Deploy
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Type check
+        run: npm run type-check
+      
+      - name: Build
+        run: npm run build
+      
+      - name: Test
+        run: npm test
+      
+      - name: Check if version changed
+        id: version-changed
+        run: |
+          if git diff HEAD^ HEAD --name-only | grep -q "package.json"; then
+            PREV_VERSION=$(git show HEAD^:package.json | jq -r '.version')
+            CURR_VERSION=$(jq -r '.version' package.json)
+            if [ "$PREV_VERSION" != "$CURR_VERSION" ]; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+              echo "version=$CURR_VERSION" >> $GITHUB_OUTPUT
+            else
+              echo "changed=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Publish to npm (if version changed)
+        if: steps.version-changed.outputs.changed == 'true' && github.ref == 'refs/heads/main'
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      
+      - name: Create GitHub Release (if version changed)
+        if: steps.version-changed.outputs.changed == 'true' && github.ref == 'refs/heads/main'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.version-changed.outputs.version }}
+          release_name: Release v${{ steps.version-changed.outputs.version }}
+          body: |
+            Changes in this Release
+            - See CHANGELOG.md for details
+          draft: false
+          prerelease: false
+      
+      - name: Notify other repositories
+        if: steps.version-changed.outputs.changed == 'true' && github.ref == 'refs/heads/main'
+        run: |
+          echo "Shared package v${{ steps.version-changed.outputs.version }} published"
+          # Add webhook or API calls to notify other repositories about the update

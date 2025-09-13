@@ -1,0 +1,48 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+      - id: check-merge-conflict
+
+  - repo: local
+    hooks:
+      - id: type-check
+        name: TypeScript Type Check
+        entry: npm run type-check
+        language: system
+        files: \.(ts)$
+        require_serial: true
+
+      - id: build
+        name: Build Package
+        entry: npm run build
+        language: system
+        files: \.(ts)$
+        require_serial: true
+
+      - id: test
+        name: Run Tests
+        entry: npm test -- --passWithNoTests
+        language: system
+        types: [typescript]
+        require_serial: true
+
+      - id: version-check
+        name: Version Consistency Check
+        entry: |
+          bash -c '
+          if git diff --cached --name-only | grep -q "package.json"; then
+            if ! npm run version:validate 2>/dev/null; then
+              echo "Version validation failed. Ensure version follows semantic versioning."
+              exit 1
+            fi
+          fi
+          '
+        language: system
+        require_serial: true
+        pass_filenames: false
